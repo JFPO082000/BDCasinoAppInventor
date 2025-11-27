@@ -4,13 +4,13 @@ import os
 import hashlib
 from datetime import datetime
 
-# --- CONEXIÓN ---
+# --- CONEXIÓN A NEON.TECH ---
 def get_db_connection():
     try:
-        # Render inyectará esto automáticamente desde las Environment Variables
+        # Render busca la variable DATABASE_URL automáticamente
         database_url = os.environ.get('DATABASE_URL')
         if not database_url:
-            print("❌ ERROR: No se encontró la variable DATABASE_URL")
+            print("❌ ERROR CRÍTICO: No existe la variable DATABASE_URL en Render")
             return None
         conn = psycopg2.connect(database_url)
         return conn
@@ -18,8 +18,12 @@ def get_db_connection():
         print(f"❌ Error conectando a Neon: {e}")
         return None
 
-# --- REGISTRO DE USUARIO ---
+# --- REGISTRO DE USUARIO (ADAPTADO A NUEVA BASE DE DATOS) ---
 def registrar_usuario_nuevo(datos):
+    """
+    Inserta un usuario nuevo asignándole el rol de 'Jugador' automáticamente.
+    Crea también su registro en la tabla Saldo.
+    """
     conn = get_db_connection()
     if not conn:
         return {"exito": False, "mensaje": "Error de conexión a BD"}
@@ -31,12 +35,16 @@ def registrar_usuario_nuevo(datos):
         pass_hash = hashlib.sha256(datos['password'].encode()).hexdigest()
         
         # 2. Insertar Usuario
-        # Nota: Asignamos 'Jugador' por defecto y activo=true
+        # ⚠️ CAMBIO IMPORTANTE: Buscamos el ID del rol 'Jugador' al vuelo
         sql_usuario = """
-            INSERT INTO Usuario (nombre, apellido, curp, email, password_hash, rol, fecha_registro, activo)
-            VALUES (%s, %s, %s, %s, %s, 'Jugador', NOW(), true)
+            INSERT INTO Usuario (id_rol, nombre, apellido, curp, email, password_hash, fecha_registro, activo)
+            VALUES (
+                (SELECT id_rol FROM Rol WHERE nombre = 'Jugador'), 
+                %s, %s, %s, %s, %s, NOW(), true
+            )
             RETURNING id_usuario;
         """
+        
         cursor.execute(sql_usuario, (
             datos['nombre'], 
             datos['apellido'], 
@@ -44,9 +52,11 @@ def registrar_usuario_nuevo(datos):
             datos['email'], 
             pass_hash
         ))
+        
+        # Obtenemos el ID que Neon acaba de crear
         id_nuevo = cursor.fetchone()[0]
         
-        # 3. Crear Saldo Inicial ($500 de regalo)
+        # 3. Crear Saldo Inicial ($500 de regalo de bienvenida)
         sql_saldo = """
             INSERT INTO Saldo (id_usuario, saldo_actual, ultima_actualizacion)
             VALUES (%s, 500.00, NOW());
@@ -56,15 +66,24 @@ def registrar_usuario_nuevo(datos):
         conn.commit()
         cursor.close()
         conn.close()
-        print(f"✅ Usuario registrado: {datos['email']} (ID: {id_nuevo})")
+        
+        print(f"✅ Usuario registrado con éxito: {datos['email']} (ID: {id_nuevo})")
         return {"exito": True, "mensaje": "Registro exitoso"}
         
-    except psycopg2.IntegrityError:
+    except psycopg2.IntegrityError as e:
         conn.rollback()
-        return {"exito": False, "mensaje": "El correo ya está registrado."}
+        error_msg = str(e)
+        if "email" in error_msg:
+            return {"exito": False, "mensaje": "Este correo ya está registrado."}
+        if "curp" in error_msg:
+            return {"exito": False, "mensaje": "Esta CURP ya está registrada."}
+        if "rol" in error_msg:
+             return {"exito": False, "mensaje": "Error interno: El rol 'Jugador' no existe en la BD."}
+        return {"exito": False, "mensaje": "Error de duplicidad en base de datos."}
+        
     except Exception as e:
         conn.rollback()
-        print(f"❌ Error en registro: {e}")
+        print(f"❌ Error desconocido en registro: {e}")
         return {"exito": False, "mensaje": str(e)}
 
 # --- VALIDAR LOGIN ---
@@ -76,6 +95,7 @@ def validar_login(email, password):
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         pass_hash = hashlib.sha256(password.encode()).hexdigest()
         
+        # Unimos Usuario y Saldo para tener toda la info de una vez
         sql = """
             SELECT u.id_usuario, u.email, u.nombre, s.saldo_actual
             FROM Usuario u
@@ -87,7 +107,7 @@ def validar_login(email, password):
         
         cursor.close()
         conn.close()
-        return usuario # Retorna diccionario con datos o None si falló
+        return usuario # Retorna diccionario con datos o None
     except Exception as e:
         print(f"Error login: {e}")
         return None
