@@ -68,8 +68,7 @@ def registrar_usuario_nuevo(datos):
     except Exception as e:
         if conn: conn.rollback()
         return {"exito": False, "mensaje": str(e)}
-
-# --- LOGIN (VERIFICACIÓN ARGON2) ---
+        
 def validar_login(email, password):
     conn = get_db_connection()
     if not conn: return None
@@ -105,5 +104,95 @@ def validar_login(email, password):
     except Exception as e:
         print(f"Error login: {e}")
         return None
+    # --- EN db_config.py ---
 
+def obtener_perfil(email):
+    conn = get_db_connection()
+    if not conn: return None
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        # Traemos datos del usuario y su saldo
+        sql = """
+            SELECT u.nombre, u.apellido, u.email, s.saldo_actual 
+            FROM Usuario u
+            JOIN Saldo s ON u.id_usuario = s.id_usuario
+            WHERE u.email = %s
+        """
+        cursor.execute(sql, (email,))
+        datos = cursor.fetchone()
+        conn.close()
+        return datos
+    except Exception as e:
+        print(f"Error obtener perfil: {e}")
+        return None
+
+def actualizar_datos_usuario(email, nombre, apellido, nueva_password=None):
+    conn = get_db_connection()
+    if not conn: return False
+    try:
+        cursor = conn.cursor()
+        
+        # Si hay contraseña nueva, la encriptamos y actualizamos todo
+        if nueva_password and len(nueva_password) > 0:
+            pass_hash = pwd_context.hash(nueva_password)
+            sql = """
+                UPDATE Usuario SET nombre = %s, apellido = %s, password_hash = %s 
+                WHERE email = %s
+            """
+            cursor.execute(sql, (nombre, apellido, pass_hash, email))
+        else:
+            # Si no hay contraseña nueva, solo actualizamos nombre y apellido
+            sql = "UPDATE Usuario SET nombre = %s, apellido = %s WHERE email = %s"
+            cursor.execute(sql, (nombre, apellido, email))
+            
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error actualizar: {e}")
+        return False
+
+def realizar_transaccion_saldo(email, monto, tipo):
+    """
+    Maneja Depósitos (monto positivo) y Retiros (monto negativo)
+    """
+    conn = get_db_connection()
+    if not conn: return {"exito": False, "mensaje": "Sin conexión"}
+    
+    try:
+        cursor = conn.cursor()
+        
+        # 1. Verificar saldo actual primero (para retiros)
+        cursor.execute("SELECT saldo_actual FROM Saldo s JOIN Usuario u ON s.id_usuario = u.id_usuario WHERE u.email = %s", (email,))
+        res = cursor.fetchone()
+        if not res: return {"exito": False, "mensaje": "Usuario no encontrado"}
+        saldo_actual = float(res[0])
+        
+        # Validar si es retiro
+        if tipo == "retiro":
+            if saldo_actual < monto:
+                return {"exito": False, "mensaje": "Fondos insuficientes"}
+            monto_final = -monto # Convertimos a negativo para restar
+        else:
+            monto_final = monto # Depósito positivo
+
+        # 2. Actualizar Saldo
+        sql = """
+            UPDATE Saldo 
+            SET saldo_actual = saldo_actual + %s, ultima_actualizacion = NOW()
+            WHERE id_usuario = (SELECT id_usuario FROM Usuario WHERE email = %s)
+            RETURNING saldo_actual;
+        """
+        cursor.execute(sql, (monto_final, email))
+        nuevo_saldo = cursor.fetchone()[0]
+        
+        # (Opcional) Aquí podrías insertar en tu tabla 'Transaccion' para historial
+        
+        conn.commit()
+        conn.close()
+        return {"exito": True, "mensaje": "Transacción exitosa", "nuevo_saldo": float(nuevo_saldo)}
+        
+    except Exception as e:
+        if conn: conn.rollback()
+        return {"exito": False, "mensaje": str(e)}
 # ... (Las funciones de get_user_balance y update pueden quedar igual o agregarlas si las necesitas)
