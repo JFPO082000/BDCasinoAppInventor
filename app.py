@@ -84,6 +84,41 @@ def api_login():
 
 # ==========================================
 # ARRANQUE DEL SERVIDOR
+
+# --- EN app.py ---
+from db_config import obtener_perfil, actualizar_datos_usuario, realizar_transaccion_saldo
+
+@app.route("/api/perfil", methods=["POST"])
+def api_perfil():
+    # App Inventor pide los datos al entrar a la pantalla
+    data = request.get_json(force=True)
+    email = data.get("email")
+    perfil = obtener_perfil(email)
+    if perfil:
+        return jsonify({"exito": True, "datos": perfil})
+    return jsonify({"exito": False, "mensaje": "Error al cargar perfil"}), 400
+
+@app.route("/api/actualizar_perfil", methods=["POST"])
+def api_update_perfil():
+    data = request.get_json(force=True)
+    email = data.get("email")
+    nombre = data.get("nombre")
+    apellido = data.get("apellido")
+    password = data.get("password") # Puede venir vacío si no quiere cambiarla
+    
+    if actualizar_datos_usuario(email, nombre, apellido, password):
+        return jsonify({"exito": True, "mensaje": "Datos actualizados"})
+    return jsonify({"exito": False, "mensaje": "Error al actualizar"}), 400
+
+@app.route("/api/transaccion", methods=["POST"])
+def api_transaccion():
+    data = request.get_json(force=True)
+    email = data.get("email")
+    monto = float(data.get("monto", 0))
+    tipo = data.get("tipo") # "deposito" o "retiro"
+    
+    resultado = realizar_transaccion_saldo(email, monto, tipo)
+    return jsonify(resultado)
 # ==========================================
 if __name__ == "__main__":
     port = int(os.environ.get('PORT', 10000))
