@@ -1,13 +1,13 @@
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import os
-# --- CAMBIO IMPORTANTE: Usamos passlib con Argon2 ---
+# --- Librería para encriptación SEGURA (Argon2) ---
 from passlib.context import CryptContext
 
-# Configuración idéntica a tu otro proyecto
+# Configuración de seguridad idéntica a tu otro proyecto
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
-# --- CONEXIÓN ---
+# --- CONEXIÓN A NEON ---
 def get_db_connection():
     try:
         database_url = os.environ.get('DATABASE_URL')
@@ -20,7 +20,7 @@ def get_db_connection():
         print(f"❌ Error conectando a Neon: {e}")
         return None
 
-# --- REGISTRO (CON ARGON2) ---
+# --- REGISTRO DE USUARIO ---
 def registrar_usuario_nuevo(datos):
     conn = get_db_connection()
     if not conn:
@@ -29,7 +29,7 @@ def registrar_usuario_nuevo(datos):
     try:
         cursor = conn.cursor()
         
-        # 1. Hashear con Argon2 (Compatible con tu otro sistema)
+        # 1. Encriptar contraseña
         pass_hash = pwd_context.hash(datos['password'])
         
         # 2. Insertar Usuario
@@ -50,7 +50,7 @@ def registrar_usuario_nuevo(datos):
         ))
         id_nuevo = cursor.fetchone()[0]
         
-        # 3. Saldo inicial
+        # 3. Crear Saldo inicial
         sql_saldo = "INSERT INTO Saldo (id_usuario, saldo_actual, ultima_actualizacion) VALUES (%s, 500.00, NOW());"
         cursor.execute(sql_saldo, (id_nuevo,))
         
@@ -68,7 +68,8 @@ def registrar_usuario_nuevo(datos):
     except Exception as e:
         if conn: conn.rollback()
         return {"exito": False, "mensaje": str(e)}
-        
+
+# --- VALIDAR LOGIN ---
 def validar_login(email, password):
     conn = get_db_connection()
     if not conn: return None
@@ -76,7 +77,7 @@ def validar_login(email, password):
     try:
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         
-        # 1. Buscamos al usuario SOLO por email (y traemos su hash)
+        # Buscamos al usuario y su rol
         sql = """
             SELECT u.id_usuario, u.email, u.nombre, u.password_hash, 
                    s.saldo_actual, r.nombre as nombre_rol
@@ -91,29 +92,26 @@ def validar_login(email, password):
         cursor.close()
         conn.close()
 
-        # 2. Si el usuario existe, verificamos la contraseña con Argon2
+        # Verificamos contraseña con Argon2
         if usuario and pwd_context.verify(password, usuario['password_hash']):
-            # ¡Contraseña Correcta!
-            # Borramos el hash del diccionario para no enviarlo por la red (seguridad)
-            del usuario['password_hash'] 
+            del usuario['password_hash'] # Seguridad: No enviamos el hash
             return usuario
         else:
-            # Usuario no existe O contraseña incorrecta
             return None
             
     except Exception as e:
         print(f"Error login: {e}")
         return None
-    # --- EN db_config.py ---
 
+# --- OBTENER PERFIL ---
 def obtener_perfil(email):
     conn = get_db_connection()
     if not conn: return None
     try:
         cursor = conn.cursor(cursor_factory=RealDictCursor)
-        # Traemos datos del usuario y su saldo
+        # Traemos datos del usuario, SU ID y su saldo
         sql = """
-            SELECT u.nombre, u.apellido, u.email, s.saldo_actual 
+            SELECT u.id_usuario, u.nombre, u.apellido, u.email, s.saldo_actual 
             FROM Usuario u
             JOIN Saldo s ON u.id_usuario = s.id_usuario
             WHERE u.email = %s
@@ -126,13 +124,14 @@ def obtener_perfil(email):
         print(f"Error obtener perfil: {e}")
         return None
 
+# --- ACTUALIZAR DATOS USUARIO ---
 def actualizar_datos_usuario(email, nombre, apellido, nueva_password=None):
     conn = get_db_connection()
     if not conn: return False
     try:
         cursor = conn.cursor()
         
-        # Si hay contraseña nueva, la encriptamos y actualizamos todo
+        # Si hay contraseña nueva, la encriptamos
         if nueva_password and len(nueva_password) > 0:
             pass_hash = pwd_context.hash(nueva_password)
             sql = """
@@ -141,7 +140,7 @@ def actualizar_datos_usuario(email, nombre, apellido, nueva_password=None):
             """
             cursor.execute(sql, (nombre, apellido, pass_hash, email))
         else:
-            # Si no hay contraseña nueva, solo actualizamos nombre y apellido
+            # Solo actualizamos nombre y apellido
             sql = "UPDATE Usuario SET nombre = %s, apellido = %s WHERE email = %s"
             cursor.execute(sql, (nombre, apellido, email))
             
@@ -152,10 +151,8 @@ def actualizar_datos_usuario(email, nombre, apellido, nueva_password=None):
         print(f"Error actualizar: {e}")
         return False
 
+# --- REALIZAR TRANSACCIÓN (DEPOSITO/RETIRO) ---
 def realizar_transaccion_saldo(email, monto, tipo):
-    """
-    Maneja Depósitos (monto positivo) y Retiros (monto negativo)
-    """
     conn = get_db_connection()
     if not conn: return {"exito": False, "mensaje": "Sin conexión"}
     
@@ -172,11 +169,11 @@ def realizar_transaccion_saldo(email, monto, tipo):
         if tipo == "retiro":
             if saldo_actual < monto:
                 return {"exito": False, "mensaje": "Fondos insuficientes"}
-            monto_final = -monto # Convertimos a negativo para restar
+            monto_final = -monto # Negativo para restar
         else:
-            monto_final = monto # Depósito positivo
+            monto_final = monto # Positivo para sumar
 
-        # 2. Actualizar Saldo
+        # 2. Actualizar Saldo en BD
         sql = """
             UPDATE Saldo 
             SET saldo_actual = saldo_actual + %s, ultima_actualizacion = NOW()
@@ -186,7 +183,7 @@ def realizar_transaccion_saldo(email, monto, tipo):
         cursor.execute(sql, (monto_final, email))
         nuevo_saldo = cursor.fetchone()[0]
         
-        # (Opcional) Aquí podrías insertar en tu tabla 'Transaccion' para historial
+        # (Opcional: Aquí podrías insertar en tabla 'Transaccion' para historial)
         
         conn.commit()
         conn.close()
@@ -195,4 +192,3 @@ def realizar_transaccion_saldo(email, monto, tipo):
     except Exception as e:
         if conn: conn.rollback()
         return {"exito": False, "mensaje": str(e)}
-# ... (Las funciones de get_user_balance y update pueden quedar igual o agregarlas si las necesitas)
