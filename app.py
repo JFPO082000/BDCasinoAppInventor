@@ -75,6 +75,7 @@ def api_login():
                 "user_id": usuario['email'],
                 "saldo": float(usuario['saldo_actual']),
                 "rol": usuario['nombre_rol'] # <--- CLAVE PARA TU REDIRECCIÓN
+                "nombre": usuario['nombre']
             })
         else:
             return jsonify({"exito": False, "mensaje": "Credenciales incorrectas"}), 401
