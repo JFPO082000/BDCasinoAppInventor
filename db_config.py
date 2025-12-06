@@ -38,14 +38,8 @@ def registrar_usuario_nuevo(datos):
         cursor.execute(sql_usuario, (datos['nombre'], datos['apellido'], datos['curp'], datos['email'], pass_hash))
         id_nuevo = cursor.fetchone()[0]
         
-<<<<<<< HEAD
-        # Saldo inicial
+        # Crear saldo inicial de 500.00 para nuevos usuarios
         cursor.execute("INSERT INTO Saldo (id_usuario, saldo_actual, ultima_actualizacion) VALUES (%s, 500.00, NOW());", (id_nuevo,))
-=======
-        # 3. Crear Saldo inicial
-        sql_saldo = "INSERT INTO Saldo (id_usuario, saldo_actual, ultima_actualizacion) VALUES (%s, 0.00, NOW());"
-        cursor.execute(sql_saldo, (id_nuevo,))
->>>>>>> 0fff547bc6b22b8741decf8497e940e918c3a124
         
         conn.commit()
         cursor.close()
@@ -189,3 +183,408 @@ def obtener_datos_auditoria(id_auditoria):
         return data
     except Exception:
         return None
+
+def obtener_historial_auditorias(email):
+    conn = get_db_connection()
+    if not conn: return []
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        sql = """
+            SELECT a.id_auditoria, a.fecha_auditoria, a.resumen
+            FROM Auditoria a
+            JOIN Usuario u ON a.id_usuario = u.id_usuario
+            WHERE u.email = %s
+            ORDER BY a.fecha_auditoria DESC
+        """
+        cursor.execute(sql, (email,))
+        auditorias = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in auditorias]
+    except Exception as e:
+        print(f"Error historial: {e}")
+        return []
+
+# --- ADMIN FUNCTIONS ---
+
+def obtener_todos_usuarios():
+    conn = get_db_connection()
+    if not conn: return []
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        sql = """
+            SELECT u.id_usuario, u.nombre, u.apellido, u.email, u.activo, r.nombre as rol, s.saldo_actual
+            FROM Usuario u
+            JOIN Rol r ON u.id_rol = r.id_rol
+            LEFT JOIN Saldo s ON u.id_usuario = s.id_usuario
+            ORDER BY u.id_usuario DESC
+        """
+        cursor.execute(sql)
+        users = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in users]
+    except Exception as e:
+        print(f"Error fetching users: {e}")
+        return []
+
+def obtener_usuario_por_id(id_usuario):
+    conn = get_db_connection()
+    if not conn: return None
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        sql = """
+            SELECT u.id_usuario, u.nombre, u.apellido, u.email, u.activo, r.nombre as rol, s.saldo_actual
+            FROM Usuario u
+            JOIN Rol r ON u.id_rol = r.id_rol
+            LEFT JOIN Saldo s ON u.id_usuario = s.id_usuario
+            WHERE u.id_usuario = %s
+        """
+        cursor.execute(sql, (id_usuario,))
+        user = cursor.fetchone()
+        conn.close()
+        return dict(user) if user else None
+    except Exception as e:
+        print(f"Error fetching user detail: {e}")
+        return None
+
+def obtener_juegos():
+    conn = get_db_connection()
+    if not conn: return []
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        # Asumimos que la tabla Juego ya existe según el esquema proporcionado
+        sql = "SELECT * FROM Juego ORDER BY id_juego DESC"
+        cursor.execute(sql)
+        games = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in games]
+    except Exception as e:
+        print(f"Error fetching games: {e}")
+        return []
+
+def crear_juego(datos):
+    conn = get_db_connection()
+    if not conn: return False
+    try:
+        cursor = conn.cursor()
+        sql = """
+            INSERT INTO Juego (nombre, descripcion, rtp, min_apuesta, max_apuesta, activo)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """
+        cursor.execute(sql, (
+            datos['nombre'], 
+            datos['descripcion'], 
+            float(datos['rtp']), 
+            float(datos['min_apuesta']), 
+            float(datos['max_apuesta']), 
+            datos['activo'] == 'true' or datos['activo'] == True
+        ))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error creating game: {e}")
+        if conn: conn.rollback()
+        return False
+
+def obtener_promociones():
+    conn = get_db_connection()
+    if not conn: return []
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        sql = "SELECT * FROM Bono ORDER BY id_bono DESC"
+        cursor.execute(sql)
+        promos = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in promos]
+    except Exception as e:
+        print(f"Error fetching promos: {e}")
+        return []
+
+def crear_promocion(datos):
+    conn = get_db_connection()
+    if not conn: return False
+    try:
+        cursor = conn.cursor()
+        sql = """
+            INSERT INTO Bono (nombre_bono, tipo, descripcion, fecha_expiracion, activo)
+            VALUES (%s, %s, %s, %s, %s)
+        """
+        # fecha_expiracion puede ser None o string YYYY-MM-DD
+        fecha = datos.get('fecha_expiracion')
+        if not fecha: fecha = None
+        
+        cursor.execute(sql, (
+            datos['nombre_bono'],
+            datos['tipo'],
+            datos['descripcion'],
+            fecha,
+            True # Activo por defecto
+        ))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error creating promo: {e}")
+        if conn: conn.rollback()
+        return False
+
+def obtener_metricas():
+    conn = get_db_connection()
+    if not conn: return {"total_users": 0, "active_users": 0, "total_deposits": 0, "total_withdrawals": 0}
+    try:
+        cursor = conn.cursor()
+        
+        # Usuarios
+        cursor.execute("SELECT COUNT(*) FROM Usuario")
+        total_users = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM Usuario WHERE activo = true")
+        active_users = cursor.fetchone()[0]
+        
+        # Finanzas (Transaccion)
+        # Asumiendo tipos: 'Depósito', 'Retiro'
+        cursor.execute("SELECT COALESCE(SUM(monto), 0) FROM Transaccion WHERE tipo_transaccion = 'Depósito' AND estado = 'Completada'")
+        total_deposits = float(cursor.fetchone()[0])
+        
+        cursor.execute("SELECT COALESCE(SUM(monto), 0) FROM Transaccion WHERE tipo_transaccion = 'Retiro' AND estado = 'Completada'")
+        total_withdrawals = float(cursor.fetchone()[0])
+        
+        conn.close()
+        return {
+            "total_users": total_users, 
+            "active_users": active_users,
+            "total_deposits": total_deposits,
+            "total_withdrawals": total_withdrawals
+        }
+    except Exception as e:
+        print(f"Error metrics: {e}")
+        return {"total_users": 0, "active_users": 0, "total_deposits": 0, "total_withdrawals": 0}
+
+# ==========================================
+# SECCIÓN 5: FUNCIONES PANEL DE AGENTE DE SOPORTE
+# ==========================================
+
+# --- TICKETS (Tabla: Soporte) ---
+
+def obtener_tickets(estado=None, asignado=None):
+    """Obtener todos los tickets con filtros opcionales"""
+    conn = get_db_connection()
+    if not conn: return []
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # Base query usando la tabla Soporte
+        sql = """
+            SELECT s.id_ticket, s.asunto, s.mensaje, s.estado, s.fecha_creacion, s.fecha_cierre,
+                   u.nombre || ' ' || u.apellido as nombre_usuario, u.email,
+                   a.nombre || ' ' || a.apellido as nombre_agente,
+                   s.id_jugador, s.id_agente
+            FROM Soporte s
+            JOIN Usuario u ON s.id_jugador = u.id_usuario
+            LEFT JOIN Usuario a ON s.id_agente = a.id_usuario
+            WHERE 1=1
+        """
+        params = []
+        
+        # Filtros
+        if estado:
+            sql += " AND s.estado = %s"
+            params.append(estado)
+        
+        if asignado == 'si':
+            sql += " AND s.id_agente IS NOT NULL"
+        elif asignado == 'no':
+            sql += " AND s.id_agente IS NULL"
+        
+        sql += " ORDER BY s.fecha_creacion DESC"
+        
+        cursor.execute(sql, params)
+        tickets = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in tickets]
+    except Exception as e:
+        print(f"Error obteniendo tickets: {e}")
+        return []
+
+def obtener_ticket_por_id(id_ticket):
+    """Obtener detalles de un ticket específico"""
+    conn = get_db_connection()
+    if not conn: return None
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        sql = """
+            SELECT s.id_ticket, s.asunto, s.mensaje, s.estado, s.fecha_creacion, s.fecha_cierre,
+                   u.nombre || ' ' || u.apellido as nombre_usuario, u.email,
+                   a.nombre || ' ' || a.apellido as nombre_agente,
+                   s.id_jugador, s.id_agente
+            FROM Soporte s
+            JOIN Usuario u ON s.id_jugador = u.id_usuario
+            LEFT JOIN Usuario a ON s.id_agente = a.id_usuario
+            WHERE s.id_ticket = %s
+        """
+        cursor.execute(sql, (id_ticket,))
+        ticket = cursor.fetchone()
+        conn.close()
+        return dict(ticket) if ticket else None
+    except Exception as e:
+        print(f"Error obteniendo ticket: {e}")
+        return None
+
+def obtener_respuestas_ticket(id_ticket):
+    """Obtener respuestas de un ticket - NO IMPLEMENTADO (no hay tabla de respuestas)"""
+    # La DB actual no tiene tabla de respuestas, retornar lista vacía
+    return []
+
+def asignar_ticket(id_ticket, id_agente):
+    """Asignar un ticket a un agente"""
+    conn = get_db_connection()
+    if not conn: return False
+    try:
+        cursor = conn.cursor()
+        sql = """
+            UPDATE Soporte 
+            SET id_agente = %s, estado = 'En Proceso'
+            WHERE id_ticket = %s
+        """
+        cursor.execute(sql, (id_agente, id_ticket))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error asignando ticket: {e}")
+        if conn: conn.rollback()
+        return False
+
+def responder_ticket(id_ticket, id_usuario, mensaje, es_agente=True):
+    """Agregar una respuesta a un ticket - NO IMPLEMENTADO (no hay tabla de respuestas)"""
+    # La DB actual no tiene tabla de respuestas
+    # Podrías actualizar el mensaje del ticket o simplemente retornar False
+    return False
+
+def cerrar_ticket(id_ticket):
+    """Cerrar un ticket"""
+    conn = get_db_connection()
+    if not conn: return False
+    try:
+        cursor = conn.cursor()
+        sql = "UPDATE Soporte SET estado = 'Cerrado', fecha_cierre = NOW() WHERE id_ticket = %s"
+        cursor.execute(sql, (id_ticket,))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error cerrando ticket: {e}")
+        if conn: conn.rollback()
+        return False
+
+def obtener_tickets_agente(id_agente):
+    """Obtener tickets asignados a un agente específico"""
+    conn = get_db_connection()
+    if not conn: return []
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        sql = """
+            SELECT s.id_ticket, s.asunto, s.mensaje, s.estado, s.fecha_creacion, s.fecha_cierre,
+                   u.nombre || ' ' || u.apellido as nombre_usuario, u.email,
+                   s.id_jugador, s.id_agente
+            FROM Soporte s
+            JOIN Usuario u ON s.id_jugador = u.id_usuario
+            WHERE s.id_agente = %s AND s.estado != 'Cerrado'
+            ORDER BY s.fecha_creacion DESC
+        """
+        cursor.execute(sql, (id_agente,))
+        tickets = cursor.fetchall()
+        conn.close()
+        
+        # Agregar fecha_asignacion ficticia para compatibilidad con frontend
+        result = []
+        for ticket in tickets:
+            t = dict(ticket)
+            t['fecha_asignacion'] = t['fecha_creacion']  # Usar fecha_creacion como aproximación
+            result.append(t)
+        return result
+    except Exception as e:
+        print(f"Error obteniendo tickets del agente: {e}")
+        return []
+
+# --- CHATS (NO IMPLEMENTADO - No hay tablas de chat) ---
+
+def obtener_chats_esperando():
+    """Obtener chats en espera - NO IMPLEMENTADO (no hay tabla de chats)"""
+    return []
+
+def obtener_chats_agente(id_agente):
+    """Obtener chats activos asignados a un agente - NO IMPLEMENTADO"""
+    return []
+
+def obtener_mensajes_chat(id_chat):
+    """Obtener mensajes de un chat - NO IMPLEMENTADO"""
+    return {'chat': None, 'mensajes': []}
+
+def tomar_chat(id_chat, id_agente):
+    """Asignar un chat a un agente - NO IMPLEMENTADO"""
+    return False
+
+def enviar_mensaje_chat(id_chat, id_usuario, mensaje, es_agente=True):
+    """Enviar un mensaje en un chat - NO IMPLEMENTADO"""
+    return False
+
+def cerrar_chat(id_chat):
+    """Cerrar un chat - NO IMPLEMENTADO"""
+    return False
+
+# --- DASHBOARD ---
+
+def obtener_dashboard_agente(id_agente):
+    """Obtener métricas para el dashboard del agente"""
+    conn = get_db_connection()
+    if not conn: 
+        return {
+            'tickets_pendientes': 0,
+            'mis_tickets': 0,
+            'chats_esperando': 0,
+            'mis_chats': 0,
+            'cerrados_hoy': 0
+        }
+    try:
+        cursor = conn.cursor()
+        
+        # Tickets pendientes (sin asignar)
+        cursor.execute("SELECT COUNT(*) FROM Soporte WHERE id_agente IS NULL AND estado = 'Abierto'")
+        tickets_pendientes = cursor.fetchone()[0]
+        
+        # Mis tickets
+        cursor.execute("SELECT COUNT(*) FROM Soporte WHERE id_agente = %s AND estado != 'Cerrado'", (id_agente,))
+        mis_tickets = cursor.fetchone()[0]
+        
+        # Chats en espera (no hay tabla de chats)
+        chats_esperando = 0
+        
+        # Mis chats (no hay tabla de chats)
+        mis_chats = 0
+        
+        # Cerrados hoy
+        cursor.execute("""
+            SELECT COUNT(*) FROM Soporte 
+            WHERE id_agente = %s AND estado = 'Cerrado' 
+            AND DATE(fecha_cierre) = CURRENT_DATE
+        """, (id_agente,))
+        cerrados_hoy = cursor.fetchone()[0]
+        
+        conn.close()
+        return {
+            'tickets_pendientes': tickets_pendientes,
+            'mis_tickets': mis_tickets,
+            'chats_esperando': chats_esperando,
+            'mis_chats': mis_chats,
+            'cerrados_hoy': cerrados_hoy
+        }
+    except Exception as e:
+        print(f"Error en dashboard agente: {e}")
+        return {
+            'tickets_pendientes': 0,
+            'mis_tickets': 0,
+            'chats_esperando': 0,
+            'mis_chats': 0,
+            'cerrados_hoy': 0
+        }
