@@ -360,6 +360,81 @@ def obtener_metricas():
         print(f"Error metrics: {e}")
         return {"total_users": 0, "active_users": 0, "total_deposits": 0, "total_withdrawals": 0}
 
+def actualizar_usuario_admin(id_usuario, nombre, apellido, nueva_password=None):
+    """Actualizar datos de un usuario desde el panel de admin"""
+    conn = get_db_connection()
+    if not conn: return False
+    try:
+        cursor = conn.cursor()
+        if nueva_password and len(nueva_password) > 0:
+            pass_hash = pwd_context.hash(nueva_password)
+            sql = "UPDATE Usuario SET nombre = %s, apellido = %s, password_hash = %s WHERE id_usuario = %s"
+            cursor.execute(sql, (nombre, apellido, pass_hash, id_usuario))
+        else:
+            sql = "UPDATE Usuario SET nombre = %s, apellido = %s WHERE id_usuario = %s"
+            cursor.execute(sql, (nombre, apellido, id_usuario))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error actualizando usuario: {e}")
+        if conn: conn.rollback()
+        return False
+
+def cambiar_estado_usuario(id_usuario, activo):
+    """Activar o desactivar un usuario"""
+    conn = get_db_connection()
+    if not conn: return False
+    try:
+        cursor = conn.cursor()
+        sql = "UPDATE Usuario SET activo = %s WHERE id_usuario = %s"
+        cursor.execute(sql, (activo, id_usuario))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error cambiando estado: {e}")
+        if conn: conn.rollback()
+        return False
+
+def eliminar_usuario(id_usuario):
+    """Eliminar un usuario (solo si no tiene dependencias críticas)"""
+    conn = get_db_connection()
+    if not conn: return False
+    try:
+        cursor = conn.cursor()
+        # Primero eliminar saldo (CASCADE debería hacerlo automáticamente)
+        sql = "DELETE FROM Usuario WHERE id_usuario = %s"
+        cursor.execute(sql, (id_usuario,))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error eliminando usuario: {e}")
+        if conn: conn.rollback()
+        return False
+
+def obtener_administradores_y_auditores():
+    """Obtener lista de administradores y auditores"""
+    conn = get_db_connection()
+    if not conn: return []
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        sql = """
+            SELECT u.id_usuario, u.nombre, u.apellido, u.email, u.activo, r.nombre as rol
+            FROM Usuario u
+            JOIN Rol r ON u.id_rol = r.id_rol
+            WHERE r.nombre IN ('Administrador', 'Auditor', 'Agente de Soporte')
+            ORDER BY r.nombre, u.id_usuario DESC
+        """
+        cursor.execute(sql)
+        users = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in users]
+    except Exception as e:
+        print(f"Error fetching admins/auditors: {e}")
+        return []
+
 # ==========================================
 # SECCIÓN 5: FUNCIONES PANEL DE AGENTE DE SOPORTE
 # ==========================================

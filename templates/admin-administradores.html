@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Administradores y Auditores — Royal Crumbs</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+</head>
+
+<body>
+    <div class="rc-container">
+
+        <!-- ===== ENCABEZADO ===== -->
+        <header class="rc-header">
+            <a href="/admin/gestion-usuarios" class="rc-back">‹</a>
+            <h1 class="rc-screen-title">Administradores y Auditores</h1>
+            <div></div>
+        </header>
+
+        <!-- ===== LISTA DE USUARIOS ===== -->
+        <section class="users-section">
+            <div id="loading" style="text-align:center; margin-top:50px;">Cargando...</div>
+            <div id="users-list" style="display:none;"></div>
+        </section>
+
+    </div>
+
+    <script>
+        async function cargarUsuarios() {
+            try {
+                const res = await fetch('/api/admin/administradores');
+                const data = await res.json();
+
+                if (data.success) {
+                    mostrarUsuarios(data.users);
+                } else {
+                    alert('Error al cargar usuarios');
+                }
+            } catch (e) {
+                console.error(e);
+                alert('Error de conexión');
+            }
+        }
+
+        function mostrarUsuarios(users) {
+            const container = document.getElementById('users-list');
+            const loading = document.getElementById('loading');
+
+            if (!users || users.length === 0) {
+                container.innerHTML = '<div style="text-align:center; color:#888; margin-top:50px;">No hay administradores ni auditores registrados</div>';
+                loading.style.display = 'none';
+                container.style.display = 'block';
+                return;
+            }
+
+            // Agrupar por rol
+            const grupos = {
+                'Administrador': [],
+                'Auditor': [],
+                'Agente de Soporte': []
+            };
+
+            users.forEach(user => {
+                if (grupos[user.rol]) {
+                    grupos[user.rol].push(user);
+                }
+            });
+
+            let html = '';
+
+            // Mostrar cada grupo
+            for (const [rol, usuarios] of Object.entries(grupos)) {
+                if (usuarios.length > 0) {
+                    html += `
+                        <div style="margin-bottom: 30px;">
+                            <h2 style="color: #ab925c; margin-bottom: 15px; font-size: 18px;">${rol}es</h2>
+                            <div class="rc-list-card">
+                    `;
+
+                    usuarios.forEach(user => {
+                        const estadoBadge = user.activo
+                            ? '<span style="color:#4caf50; font-size:12px;">● Activo</span>'
+                            : '<span style="color:#f44336; font-size:12px;">● Inactivo</span>';
+
+                        html += `
+                            <a href="/admin/usuarios/perfil?id=${user.id_usuario}" class="rc-list-item">
+                                <div>
+                                    <div style="font-weight:bold;">${user.nombre} ${user.apellido}</div>
+                                    <div style="font-size:12px; color:#888;">${user.email}</div>
+                                    <div style="margin-top:5px;">${estadoBadge}</div>
+                                </div>
+                                <span class="rc-chevron"></span>
+                            </a>
+                        `;
+                    });
+
+                    html += `
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+
+            container.innerHTML = html;
+            loading.style.display = 'none';
+            container.style.display = 'block';
+        }
+
+        document.addEventListener('DOMContentLoaded', cargarUsuarios);
+    </script>
+</body>
+
+</html>

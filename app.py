@@ -479,6 +479,65 @@ def api_admin_usuario_detail(id_usuario):
         return jsonify({"success": True, "user": user})
     return jsonify({"success": False, "error": "Usuario no encontrado"}), 404
 
+@app.route("/api/admin/usuarios/<int:id_usuario>", methods=["PUT"])
+@admin_required
+def api_admin_actualizar_usuario(id_usuario):
+    """Actualizar datos de un usuario"""
+    from db_config import actualizar_usuario_admin
+    try:
+        data = request.get_json(force=True)
+        nombre = data.get('nombre')
+        apellido = data.get('apellido')
+        nueva_password = data.get('password', None)
+        
+        if actualizar_usuario_admin(id_usuario, nombre, apellido, nueva_password):
+            return jsonify({"success": True, "mensaje": "Usuario actualizado correctamente"})
+        return jsonify({"success": False, "error": "No se pudo actualizar el usuario"}), 500
+    except Exception as e:
+        print(f"Error actualizando usuario: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/api/admin/usuarios/<int:id_usuario>/estado", methods=["PUT"])
+@admin_required
+def api_admin_cambiar_estado(id_usuario):
+    """Cambiar estado activo/inactivo de un usuario"""
+    from db_config import cambiar_estado_usuario
+    try:
+        data = request.get_json(force=True)
+        activo = data.get('activo', True)
+        
+        if cambiar_estado_usuario(id_usuario, activo):
+            return jsonify({"success": True, "mensaje": "Estado actualizado correctamente"})
+        return jsonify({"success": False, "error": "No se pudo cambiar el estado"}), 500
+    except Exception as e:
+        print(f"Error cambiando estado: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/api/admin/usuarios/<int:id_usuario>", methods=["DELETE"])
+@admin_required
+def api_admin_eliminar_usuario(id_usuario):
+    """Eliminar un usuario"""
+    from db_config import eliminar_usuario
+    try:
+        if eliminar_usuario(id_usuario):
+            return jsonify({"success": True, "mensaje": "Usuario eliminado correctamente"})
+        return jsonify({"success": False, "error": "No se pudo eliminar el usuario"}), 500
+    except Exception as e:
+        print(f"Error eliminando usuario: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/admin/administradores")
+@admin_required
+def admin_administradores():
+    return render_template("admin-administradores.html")
+
+@app.route("/api/admin/administradores", methods=["GET"])
+@admin_required
+def api_admin_administradores():
+    from db_config import obtener_administradores_y_auditores
+    users = obtener_administradores_y_auditores()
+    return jsonify({"success": True, "users": users})
+
 # ==========================================
 # SECCIÓN 5: PANEL DE AGENTE DE SOPORTE
 # ==========================================
