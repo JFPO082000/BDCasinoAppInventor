@@ -145,7 +145,8 @@
 
                 if (data.exito) {
                     // Guardar datos en localStorage
-                    localStorage.setItem('userId', data.user_id);
+                    localStorage.setItem('userId', data.id_usuario);  // ID numérico para APIs
+                    localStorage.setItem('userEmail', data.user_id);  // Email
                     localStorage.setItem('userName', data.nombre);
                     localStorage.setItem('userRole', data.rol);
 

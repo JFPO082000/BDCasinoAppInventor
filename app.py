@@ -85,6 +85,7 @@ def api_login():
                 "exito": True, 
                 "mensaje": "Bienvenido",
                 "user_id": usuario["email"],
+                "id_usuario": usuario["id_usuario"],  # ID numérico para APIs
                 "nombre": usuario["nombre"],
                 "saldo": float(usuario["saldo_actual"]),
                 "rol": usuario["nombre_rol"]
