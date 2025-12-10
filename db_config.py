@@ -507,31 +507,151 @@ def obtener_tickets_agente(id_agente):
         print(f"Error obteniendo tickets del agente: {e}")
         return []
 
-# --- CHATS (NO IMPLEMENTADO - No hay tablas de chat) ---
+# --- CHATS (Tabla: Chat y Mensaje_Chat) ---
 
 def obtener_chats_esperando():
-    """Obtener chats en espera - NO IMPLEMENTADO (no hay tabla de chats)"""
-    return []
+    """Obtener chats en espera de ser asignados a un agente"""
+    conn = get_db_connection()
+    if not conn: return []
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        sql = """
+            SELECT c.id_chat, c.fecha_inicio, c.estado,
+                   u.nombre || ' ' || u.apellido as nombre_usuario, u.email
+            FROM Chat c
+            JOIN Usuario u ON c.id_jugador = u.id_usuario
+            WHERE c.estado = 'Esperando'
+            ORDER BY c.fecha_inicio ASC
+        """
+        cursor.execute(sql)
+        chats = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in chats]
+    except Exception as e:
+        print(f"Error obteniendo chats en espera: {e}")
+        return []
 
 def obtener_chats_agente(id_agente):
-    """Obtener chats activos asignados a un agente - NO IMPLEMENTADO"""
-    return []
+    """Obtener chats activos asignados a un agente específico"""
+    conn = get_db_connection()
+    if not conn: return []
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        sql = """
+            SELECT c.id_chat, c.fecha_inicio, c.fecha_asignacion, c.estado,
+                   u.nombre || ' ' || u.apellido as nombre_usuario, u.email
+            FROM Chat c
+            JOIN Usuario u ON c.id_jugador = u.id_usuario
+            WHERE c.id_agente = %s AND c.estado = 'Activo'
+            ORDER BY c.fecha_asignacion DESC
+        """
+        cursor.execute(sql, (id_agente,))
+        chats = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in chats]
+    except Exception as e:
+        print(f"Error obteniendo chats del agente: {e}")
+        return []
 
 def obtener_mensajes_chat(id_chat):
-    """Obtener mensajes de un chat - NO IMPLEMENTADO"""
-    return {'chat': None, 'mensajes': []}
+    """Obtener información del chat y todos sus mensajes"""
+    conn = get_db_connection()
+    if not conn: return {'chat': None, 'mensajes': []}
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # Obtener información del chat
+        sql_chat = """
+            SELECT c.id_chat, c.fecha_inicio, c.fecha_asignacion, c.fecha_cierre, c.estado,
+                   u.nombre || ' ' || u.apellido as nombre_usuario, u.email as email_usuario,
+                   a.nombre || ' ' || a.apellido as nombre_agente
+            FROM Chat c
+            JOIN Usuario u ON c.id_jugador = u.id_usuario
+            LEFT JOIN Usuario a ON c.id_agente = a.id_usuario
+            WHERE c.id_chat = %s
+        """
+        cursor.execute(sql_chat, (id_chat,))
+        chat = cursor.fetchone()
+        
+        if not chat:
+            conn.close()
+            return {'chat': None, 'mensajes': []}
+        
+        # Obtener mensajes del chat
+        sql_mensajes = """
+            SELECT m.id_mensaje, m.mensaje, m.fecha_mensaje, m.es_agente, m.leido,
+                   u.nombre || ' ' || u.apellido as nombre_usuario
+            FROM Mensaje_Chat m
+            JOIN Usuario u ON m.id_usuario = u.id_usuario
+            WHERE m.id_chat = %s
+            ORDER BY m.fecha_mensaje ASC
+        """
+        cursor.execute(sql_mensajes, (id_chat,))
+        mensajes = cursor.fetchall()
+        
+        conn.close()
+        return {
+            'chat': dict(chat),
+            'mensajes': [dict(row) for row in mensajes]
+        }
+    except Exception as e:
+        print(f"Error obteniendo mensajes del chat: {e}")
+        return {'chat': None, 'mensajes': []}
 
 def tomar_chat(id_chat, id_agente):
-    """Asignar un chat a un agente - NO IMPLEMENTADO"""
-    return False
+    """Asignar un chat a un agente y cambiar su estado a Activo"""
+    conn = get_db_connection()
+    if not conn: return False
+    try:
+        cursor = conn.cursor()
+        sql = """
+            UPDATE Chat 
+            SET id_agente = %s, estado = 'Activo', fecha_asignacion = NOW()
+            WHERE id_chat = %s AND estado = 'Esperando'
+        """
+        cursor.execute(sql, (id_agente, id_chat))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error tomando chat: {e}")
+        if conn: conn.rollback()
+        return False
 
 def enviar_mensaje_chat(id_chat, id_usuario, mensaje, es_agente=True):
-    """Enviar un mensaje en un chat - NO IMPLEMENTADO"""
-    return False
+    """Enviar un mensaje en un chat"""
+    conn = get_db_connection()
+    if not conn: return False
+    try:
+        cursor = conn.cursor()
+        sql = """
+            INSERT INTO Mensaje_Chat (id_chat, id_usuario, mensaje, es_agente, fecha_mensaje, leido)
+            VALUES (%s, %s, %s, %s, NOW(), false)
+        """
+        cursor.execute(sql, (id_chat, id_usuario, mensaje, es_agente))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error enviando mensaje: {e}")
+        if conn: conn.rollback()
+        return False
 
 def cerrar_chat(id_chat):
-    """Cerrar un chat - NO IMPLEMENTADO"""
-    return False
+    """Cerrar un chat"""
+    conn = get_db_connection()
+    if not conn: return False
+    try:
+        cursor = conn.cursor()
+        sql = "UPDATE Chat SET estado = 'Cerrado', fecha_cierre = NOW() WHERE id_chat = %s"
+        cursor.execute(sql, (id_chat,))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error cerrando chat: {e}")
+        if conn: conn.rollback()
+        return False
 
 # --- DASHBOARD ---
 
@@ -557,19 +677,30 @@ def obtener_dashboard_agente(id_agente):
         cursor.execute("SELECT COUNT(*) FROM Soporte WHERE id_agente = %s AND estado != 'Cerrado'", (id_agente,))
         mis_tickets = cursor.fetchone()[0]
         
-        # Chats en espera (no hay tabla de chats)
-        chats_esperando = 0
+        # Chats en espera
+        cursor.execute("SELECT COUNT(*) FROM Chat WHERE estado = 'Esperando'")
+        chats_esperando = cursor.fetchone()[0]
         
-        # Mis chats (no hay tabla de chats)
-        mis_chats = 0
+        # Mis chats activos
+        cursor.execute("SELECT COUNT(*) FROM Chat WHERE id_agente = %s AND estado = 'Activo'", (id_agente,))
+        mis_chats = cursor.fetchone()[0]
         
-        # Cerrados hoy
+        # Cerrados hoy (tickets y chats)
         cursor.execute("""
             SELECT COUNT(*) FROM Soporte 
             WHERE id_agente = %s AND estado = 'Cerrado' 
             AND DATE(fecha_cierre) = CURRENT_DATE
         """, (id_agente,))
-        cerrados_hoy = cursor.fetchone()[0]
+        tickets_cerrados_hoy = cursor.fetchone()[0]
+        
+        cursor.execute("""
+            SELECT COUNT(*) FROM Chat 
+            WHERE id_agente = %s AND estado = 'Cerrado' 
+            AND DATE(fecha_cierre) = CURRENT_DATE
+        """, (id_agente,))
+        chats_cerrados_hoy = cursor.fetchone()[0]
+        
+        cerrados_hoy = tickets_cerrados_hoy + chats_cerrados_hoy
         
         conn.close()
         return {

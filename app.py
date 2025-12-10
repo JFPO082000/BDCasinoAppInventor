@@ -36,6 +36,10 @@ app.config["PERMANENT_SESSION_LIFETIME"] = 3600  # 1 hora
 def index():
     return "✅ Servidor Central del Casino Activo.<br>Usa la App Móvil para interactuar."
 
+@app.route("/login", methods=["GET"])
+def login_page():
+    return render_template("login.html")
+
 @app.route("/api/registrar", methods=["POST"])
 def api_registrar():
     print("--- INICIO DE REGISTRO ---")
@@ -478,44 +482,64 @@ def api_admin_usuario_detail(id_usuario):
 # SECCIÓN 5: PANEL DE AGENTE DE SOPORTE
 # ==========================================
 
+# Decorador para verificar que el usuario es Agente de Soporte
+def agente_required(f):
+    from functools import wraps
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if "user_id" not in session:
+            return render_template("login.html")
+        if session.get("rol") != "Agente de Soporte":
+            return "Acceso denegado. Solo agentes de soporte pueden acceder a esta sección.", 403
+        return f(*args, **kwargs)
+    return decorated_function
+
 # --- RUTAS HTML ---
 
 @app.route("/agente")
+@agente_required
 def panel_agente():
     """Menú principal del panel de agente"""
     return render_template("agente.html")
 
 @app.route("/agente/dashboard")
+@agente_required
 def agente_dashboard():
     """Dashboard del agente con métricas"""
     return render_template("agente-dashboard.html")
 
 @app.route("/agente/tickets")
+@agente_required
 def agente_tickets():
     """Lista de todos los tickets"""
     return render_template("agente-tickets.html")
 
 @app.route("/agente/ticket/<int:id_ticket>")
+@agente_required
 def agente_ticket_detalle(id_ticket):
     """Detalle de un ticket específico"""
     return render_template("agente-ticket-detalle.html")
 
 @app.route("/agente/mis-tickets")
+@agente_required
 def agente_mis_tickets():
     """Tickets asignados al agente"""
     return render_template("agente-mis-tickets.html")
 
 @app.route("/agente/chats")
+@agente_required
 def agente_chats():
     """Chats en espera de ser asignados"""
     return render_template("agente-chats.html")
 
 @app.route("/agente/chat/<int:id_chat>")
+@agente_required
 def agente_chat_activo(id_chat):
     """Vista de chat activo"""
     return render_template("agente-chat-activo.html")
 
 @app.route("/agente/mis-chats")
+@agente_required
 def agente_mis_chats():
     """Chats asignados al agente"""
     return render_template("agente-mis-chats.html")
