@@ -237,12 +237,15 @@ def generar_pdf(id_auditoria):
     c = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
     
-    # --- CONFIGURACIÓN DE FUENTES ---
+    # --- CONFIGURACIÓN DE FUENTES Y COLORES ---
     # Usaremos Helvetica como sustituto estándar de Arial
     font_title = "Helvetica-Bold"
     font_body = "Helvetica"
     size_title = 14
     size_body = 12
+    
+    # Establecer color de texto a negro (opaco)
+    c.setFillColorRGB(0, 0, 0)  # Negro sólido
     
     # --- ENCABEZADO ---
     c.setFont(font_title, size_title)
@@ -273,6 +276,7 @@ def generar_pdf(id_auditoria):
          items = {}
     
     c.setFont(font_body, size_body)
+    c.setFillColorRGB(0, 0, 0)  # Asegurar texto negro
     
     # Dimensiones de la tabla
     # Col 1: Pregunta (Ancho variable)
@@ -301,6 +305,7 @@ def generar_pdf(id_auditoria):
             c.showPage()
             y = height - 50
             c.setFont(font_body, size_body)
+            c.setFillColorRGB(0, 0, 0)  # Restablecer color negro en nueva página
         
         # Determinar marcas
         estado = str(respuesta)
@@ -309,6 +314,7 @@ def generar_pdf(id_auditoria):
         mark_parcial = "X" if "Parcialmente" in estado else ""
         
         # Dibujar líneas horizontales (Arriba y Abajo de la fila)
+        c.setStrokeColorRGB(0, 0, 0)  # Líneas negras
         c.setLineWidth(0.5)
         c.line(x_start, y + row_height, x_end, y + row_height) # Arriba
         c.line(x_start, y, x_end, y) # Abajo
@@ -327,6 +333,7 @@ def generar_pdf(id_auditoria):
         text_y = y + 10
         
         # Pregunta (Recortar si es muy larga para que quepa en la celda)
+        c.setFillColorRGB(0, 0, 0)  # Texto negro
         c.setFont(font_body, 10) # Un poco más pequeño para que quepa mejor
         pregunta_corta = (pregunta[:45] + '..') if len(pregunta) > 45 else pregunta
         c.drawString(x_start + 5, text_y, pregunta_corta)
